@@ -1,0 +1,411 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- =============================================================================
+-- CONFIGURAÇÕES DE ATIVOS E ESTILO
+-- =============================================================================
+local ASSET_CLOSE_BUTTON = "rbxassetid://98235327129327"
+local ASSET_SPAWN_BG = "rbxassetid://85337967115080"
+local ASSET_TOGGLE_BUTTON = "rbxassetid://140640434494146"
+
+local FONT_ARCADE = Enum.Font.Arcade
+
+-- Tabela de jogadores completamente deletados/bloqueados
+local JogadoresDeletados = {}
+local ConexaoDescendantAdded = nil
+local ConexaoStepped = nil
+local ALL_ATIVADO = false
+
+-- =============================================================================
+-- GERADOR DA INTERFACE GRÁFICA (UI)
+-- =============================================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SpawnismoAntiNuke"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- 1. BOTÃO EXTERNO DE ABRIR/FECHAR
+local ToggleBtn = Instance.new("ImageButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Size = UDim2.new(0, 70, 0, 70)
+ToggleBtn.Position = UDim2.new(0.02, 0, 0.2, 0)
+ToggleBtn.BackgroundTransparency = 1 
+ToggleBtn.BorderSizePixel = 0        
+ToggleBtn.Image = ASSET_TOGGLE_BUTTON
+ToggleBtn.ZIndex = 10
+ToggleBtn.Parent = ScreenGui
+
+-- 2. CONTAINER PRINCIPAL
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 240, 0, 320)
+MainFrame.Position = UDim2.new(0.5, -120, 0.5, -160)
+MainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+local Border = Instance.new("UIStroke")
+Border.Color = Color3.fromRGB(255, 255, 255)
+Border.Thickness = 2
+Border.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+Border.Parent = MainFrame
+
+local SpawnBackground = Instance.new("ImageLabel")
+SpawnBackground.Name = "SpawnBG"
+SpawnBackground.Size = UDim2.new(0.85, 0, 0.85, 0)
+SpawnBackground.Position = UDim2.new(0.075, 0, 0.075, 0)
+SpawnBackground.BackgroundTransparency = 1
+SpawnBackground.Image = ASSET_SPAWN_BG
+SpawnBackground.ScaleType = Enum.ScaleType.Fit
+SpawnBackground.ImageColor3 = Color3.fromRGB(35, 35, 35)
+SpawnBackground.ZIndex = 1
+SpawnBackground.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(0.5, 0, 0.12, 0)
+Title.Position = UDim2.new(0.06, 0, 0.04, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "DELETE PLAYER"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+Title.Font = FONT_ARCADE
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 2
+Title.Parent = MainFrame
+
+-- Botão ALL (Posição original mantida, ZIndex aumentado para não ser obstruído)
+local AllBtn = Instance.new("TextButton")
+AllBtn.Name = "AllBtn"
+AllBtn.Size = UDim2.new(0, 42, 0, 24)
+AllBtn.Position = UDim2.new(0.76, -24, 0.05, 0) 
+AllBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+AllBtn.Text = "ALL"
+AllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AllBtn.TextSize = 14
+AllBtn.Font = FONT_ARCADE
+AllBtn.ZIndex = 5 -- FIX: Garante que fique acima de camadas sobrepostas
+AllBtn.Parent = MainFrame
+
+local AllBorder = Instance.new("UIStroke")
+AllBorder.Color = Color3.fromRGB(0, 0, 0)
+AllBorder.Thickness = 1.5
+AllBorder.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+AllBorder.Parent = AllBtn
+
+-- Botão X (Fechar Total)
+local CloseBtn = Instance.new("ImageButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.new(0, 24, 0, 24)
+CloseBtn.Position = UDim2.new(0.94, -24, 0.05, 0)
+CloseBtn.BackgroundTransparency = 1
+CloseBtn.Image = ASSET_CLOSE_BUTTON
+CloseBtn.ZIndex = 2
+CloseBtn.Parent = MainFrame
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- 3. BARRA DE PESQUISA
+local SearchBar = Instance.new("TextBox")
+SearchBar.Name = "SearchBar"
+SearchBar.Size = UDim2.new(0.88, 0, 0, 22)
+SearchBar.Position = UDim2.new(0.06, 0, 0.18, 0)
+SearchBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SearchBar.BorderSizePixel = 0
+SearchBar.Text = ""
+SearchBar.PlaceholderText = "Pesquisar jogador..."
+SearchBar.TextColor3 = Color3.fromRGB(0, 0, 0)
+SearchBar.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+SearchBar.TextSize = 12
+SearchBar.Font = FONT_ARCADE
+SearchBar.ZIndex = 3
+SearchBar.Parent = MainFrame
+
+-- Lista de Jogadores com Rolagem
+local ScrollList = Instance.new("ScrollingFrame")
+ScrollList.Name = "PlayerScroll"
+ScrollList.Size = UDim2.new(0.88, 0, 0.70, 0)
+ScrollList.Position = UDim2.new(0.06, 0, 0.27, 0)
+ScrollList.BackgroundTransparency = 1
+ScrollList.BorderSizePixel = 0
+ScrollList.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollList.ScrollBarThickness = 2
+ScrollList.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+ScrollList.ZIndex = 2
+ScrollList.Parent = MainFrame
+
+-- FIX: Margem interna para evitar que o corte do ScrollingFrame engula as bordas dos botões
+local ListPadding = Instance.new("UIPadding")
+ListPadding.PaddingLeft = UDim.new(0, 2)
+ListPadding.PaddingRight = UDim.new(0, 2)
+ListPadding.PaddingTop = UDim.new(0, 2)
+ListPadding.PaddingBottom = UDim.new(0, 2)
+ListPadding.Parent = ScrollList
+
+local Grid = Instance.new("UIGridLayout")
+Grid.CellSize = UDim2.new(0.48, -2, 0, 32) -- Ajustado levemente para compensar o Padding interno
+Grid.CellPadding = UDim2.new(0.04, 0, 0, 6)
+Grid.SortOrder = Enum.SortOrder.LayoutOrder
+Grid.Parent = ScrollList
+
+Grid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    ScrollList.CanvasSize = UDim2.new(0, 0, 0, Grid.AbsoluteContentSize.Y + 10)
+end)
+
+-- =============================================================================
+-- SISTEMA DE ARRASTE (DRAGGING)
+-- =============================================================================
+local function criarArrastavel(guiObject)
+    local dragging, dragInput, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+
+    guiObject.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = guiObject.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    guiObject.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+end
+
+criarArrastavel(MainFrame)
+criarArrastavel(ToggleBtn)
+
+-- =============================================================================
+-- FILTRAGEM DA LISTA DE BUSCA
+-- =============================================================================
+local function filtrarEOrdenarLista()
+    local filtro = SearchBar.Text:lower()
+    for _, btn in ipairs(ScrollList:GetChildren()) do
+        if btn:IsA("TextButton") then
+            local playerName = btn.Name:lower()
+            local displayName = btn:GetAttribute("DisplayName"):lower()
+            
+            if filtro == "" then
+                btn.LayoutOrder = 100
+                btn.Visible = true
+            else
+                local matchUser = string.find(playerName, filtro, 1, true)
+                local matchDisplay = string.find(displayName, filtro, 1, true)
+                
+                if matchUser or matchDisplay then
+                    local menorPosicao = math.min(matchUser or 999, matchDisplay or 999)
+                    btn.LayoutOrder = menorPosicao
+                    btn.Visible = true
+                else
+                    btn.LayoutOrder = 1000
+                    btn.Visible = false
+                end
+            end
+        end
+    end
+end
+
+SearchBar:GetPropertyChangedSignal("Text"):Connect(filtrarEOrdenarLista)
+
+-- =============================================================================
+-- MECÂNICA DE REMOÇÃO LOCAL
+-- =============================================================================
+
+local function processarItemDoAlvo(item, player)
+    if not item then return end
+    
+    if item:IsA("Tool") then
+        pcall(function() item:Destroy() end)
+        return
+    end
+
+    local nomeItem = item.Name:lower()
+    if string.find(nomeItem, "bola") or string.find(nomeItem, "ball") then
+        local ownerAttr = item:GetAttribute("Owner") or item:GetAttribute("Creator")
+        if ownerAttr and (tostring(ownerAttr):lower() == player.Name:lower() or ownerAttr == player.UserId) then
+            pcall(function() item:Destroy() end)
+            return
+        end
+        
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") and item:IsA("BasePart") then
+            local distancia = (item.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            if distancia < 15 then
+                pcall(function() item:Destroy() end)
+            end
+        end
+    end
+end
+
+ConexaoDescendantAdded = workspace.DescendantAdded:Connect(function(descendant)
+    for player, _ in pairs(JogadoresDeletados) do
+        if player.Character and descendant:IsDescendantOf(player.Character) then
+            processarItemDoAlvo(descendant, player)
+        else
+            task.defer(function()
+                processarItemDoAlvo(descendant, player)
+            end)
+        end
+    end
+end)
+
+ConexaoStepped = RunService.Stepped:Connect(function()
+    for player, _ in pairs(JogadoresDeletados) do
+        if player.Character then
+            player.Character.Parent = nil
+        end
+    end
+end)
+
+local function gerenciarJogadorDeletado(player)
+    local dados = JogadoresDeletados[player]
+    if dados then
+        if player.Character then player.Character.Parent = nil end
+        if not dados.ConexaoChar then
+            dados.ConexaoChar = player.CharacterAdded:Connect(function(char)
+                task.wait()
+                if JogadoresDeletados[player] then char.Parent = nil end
+            end)
+        end
+    else
+        if player.Character then player.Character.Parent = workspace end
+    end
+end
+
+local function limparDadosJogador(player)
+    if JogadoresDeletados[player] then
+        if JogadoresDeletados[player].ConexaoChar then
+            JogadoresDeletados[player].ConexaoChar:Disconnect()
+        end
+        JogadoresDeletados[player] = nil
+    end
+end
+
+-- =============================================================================
+-- GERENCIADOR DA LISTA (Apenas ativa/desativa a Borda Branca)
+-- =============================================================================
+local function alternarEstadoBotao(player, btn, stroke, forcarEstado)
+    local deveAtivar = forcarEstado
+    if deveAtivar == nil then
+        deveAtivar = not JogadoresDeletados[player]
+    end
+
+    if deveAtivar then
+        if not JogadoresDeletados[player] then
+            JogadoresDeletados[player] = { ConexaoChar = nil }
+        end
+        gerenciarJogadorDeletado(player)
+        
+        stroke.Color = Color3.fromRGB(255, 255, 255)
+    else
+        limparDadosJogador(player)
+        gerenciarJogadorDeletado(player)
+        
+        stroke.Color = Color3.fromRGB(0, 0, 0)
+    end
+end
+
+local function criarBotaoJogador(player)
+    if player == LocalPlayer then return end
+
+    local PlayerBtn = Instance.new("TextButton")
+    PlayerBtn.Name = player.Name
+    PlayerBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    PlayerBtn.BorderSizePixel = 0
+    PlayerBtn.Size = UDim2.new(1, 0, 1, 0)
+    
+    PlayerBtn.Text = player.DisplayName .. " (@" .. player.Name .. ")"
+    PlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PlayerBtn.TextSize = 13 
+    PlayerBtn.Font = FONT_ARCADE 
+    PlayerBtn.TextTruncate = Enum.TextTruncate.AtEnd
+    PlayerBtn.ZIndex = 4 -- Aumentado levemente para sobrepor fundos perfeitamente
+    
+    PlayerBtn:SetAttribute("DisplayName", player.DisplayName)
+    PlayerBtn.Parent = ScrollList
+
+    local BtnBorder = Instance.new("UIStroke")
+    BtnBorder.Color = Color3.fromRGB(0, 0, 0)
+    BtnBorder.Thickness = 1.5
+    BtnBorder.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    BtnBorder.Parent = PlayerBtn
+
+    if ALL_ATIVADO then
+        alternarEstadoBotao(player, PlayerBtn, BtnBorder, true)
+    end
+
+    PlayerBtn.MouseButton1Click:Connect(function()
+        alternarEstadoBotao(player, PlayerBtn, BtnBorder)
+    end)
+end
+
+-- Funcionalidade do Botão ALL
+AllBtn.MouseButton1Click:Connect(function()
+    ALL_ATIVADO = not ALL_ATIVADO
+    
+    if ALL_ATIVADO then
+        AllBorder.Color = Color3.fromRGB(255, 255, 255)
+    else
+        AllBorder.Color = Color3.fromRGB(0, 0, 0)
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local btn = ScrollList:FindFirstChild(p.Name)
+            local stroke = btn and btn:FindFirstChildOfClass("UIStroke")
+            if btn and stroke then
+                alternarEstadoBotao(p, btn, stroke, ALL_ATIVADO)
+            end
+        end
+    end
+end)
+
+-- Funcionalidade do Botão X (Destruição Completa)
+CloseBtn.MouseButton1Click:Connect(function()
+    if ConexaoDescendantAdded then ConexaoDescendantAdded:Disconnect() end
+    if ConexaoStepped then ConexaoStepped:Disconnect() end
+    
+    for player, _ in pairs(JogadoresDeletados) do
+        limparDadosJogador(player)
+        if player.Character then
+            player.Character.Parent = workspace
+        end
+    end
+    
+    ScreenGui:Destroy()
+end)
+
+-- Inicialização da Lista
+for _, p in ipairs(Players:GetPlayers()) do
+    criarBotaoJogador(p)
+end
+
+Players.PlayerAdded:Connect(criarBotaoJogador)
+Players.PlayerRemoving:Connect(function(player)
+    limparDadosJogador(player)
+    local btn = ScrollList:FindFirstChild(player.Name)
+    if btn then btn:Destroy() end
+end)

@@ -25,7 +25,20 @@ local ALL_ATIVADO = false
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SpawnismoAntiNuke"
 ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- // CONFIGURAÇÃO DE UISCALE SOLICITADA
+local UiScale = Instance.new("UIScale", ScreenGui)
+local function UpdateUIScale()
+    if not UserInputService.TouchEnabled then
+        UiScale.Scale = 1.9 -- 90% maior no PC
+    else
+        UiScale.Scale = 1.0 -- Tamanho padrão no mobile
+    end
+end
+UpdateUIScale()
+UserInputService:GetPropertyChangedSignal("TouchEnabled"):Connect(UpdateUIScale)
 
 -- 1. BOTÃO EXTERNO DE ABRIR/FECHAR
 local ToggleBtn = Instance.new("ImageButton")
